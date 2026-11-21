@@ -1,0 +1,8 @@
+flask==3.0.3
+gunicorn==22.0.0
+requests==2.32.3
+itsdangerous==2.2.0
+werkzeug==3.0.3
+# Only for Postgres (set DATABASE_URL):
+sqlalchemy==2.0.31
+psycopg2-binary==2.9.9
