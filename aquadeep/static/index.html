@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AQUA DEEP Float Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#04141f;--panel:#0a2638;--line:#16405a;--text:#e3f1f7;--mute:#8fb0c0;--cyan:#27d3e6;--orange:#ff9d3c;--purple:#a58bff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+button,input,select{font:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.hidden{display:none!important}
+
+/* auth */
+#auth{min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 50% 120%,#0b4a63,var(--bg) 60%)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:32px;width:100%;max-width:400px}
+.card .logo{font-size:40px;text-align:center}
+.card h1{text-align:center;font-size:26px;margin:6px 0 4px}
+.card p.sub{text-align:center;color:var(--mute);font-size:14px;margin-bottom:22px}
+label{display:block;font-size:13px;color:var(--mute);margin:12px 0 4px}
+input[type=text],input[type=email],input[type=password]{width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--text)}
+.btn{width:100%;margin-top:18px;padding:11px;border:0;border-radius:8px;background:var(--cyan);color:#022;font-weight:600}
+.btn.alt{background:transparent;border:1px solid var(--line);color:var(--text);margin-top:10px}
+.or{text-align:center;color:var(--mute);font-size:13px;margin-top:16px}
+.switch{text-align:center;font-size:14px;margin-top:16px;color:var(--mute)}
+.switch a{color:var(--cyan);cursor:pointer}
+.err{color:#ff7b7b;font-size:13px;margin-top:8px;min-height:16px}
+
+/* app shell */
+header{display:flex;align-items:center;gap:20px;padding:10px 20px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header .brand{font-weight:700;font-size:18px}
+nav{display:flex;gap:4px;flex:1;flex-wrap:wrap}
+nav button{background:none;border:0;color:var(--mute);padding:8px 14px;border-radius:8px}
+nav button.on{background:var(--line);color:var(--text)}
+.user{display:flex;align-items:center;gap:10px;font-size:14px}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--cyan);color:#022;display:grid;place-items:center;font-weight:700}
+.user button{background:none;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:5px 10px}
+main{padding:20px;max-width:1300px;margin:auto}
+.page{display:none}.page.on{display:block}
+h2{font-size:22px;margin-bottom:14px}
+
+/* map + chat */
+.split{display:grid;grid-template-columns:360px 1fr;gap:16px}
+.chat{background:var(--panel);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;height:620px}
+.chat-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.chat-head h3{font-size:16px;flex:1}
+.live{font-size:11px;color:#6dffb0;border:1px solid #6dffb0;border-radius:10px;padding:1px 7px}
+.chat-head select{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px}
+#msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.m{max-width:88%;padding:9px 12px;border-radius:12px;font-size:14px;line-height:1.45}
+.m.bot{background:var(--bg);border:1px solid var(--line);align-self:flex-start}
+.m.me{background:var(--cyan);color:#022;align-self:flex-end}
+.chat-in{display:flex;gap:6px;padding:10px;border-top:1px solid var(--line)}
+.chat-in input{flex:1;padding:9px 12px;background:var(--bg);border:1px solid var(--line);border-radius:20px;color:var(--text)}
+.chat-in button{width:38px;height:38px;border-radius:50%;border:0;background:var(--line);color:var(--text)}
+.chat-in button.send{background:var(--cyan);color:#022}
+.hint{font-size:12px;color:var(--mute);text-align:center;padding-bottom:8px}
+.mapbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.mapbox h3{padding:12px 14px;font-size:16px;border-bottom:1px solid var(--line)}
+#map{flex:1;min-height:420px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}
+.stats div{padding:12px;text-align:center;border-right:1px solid var(--line)}
+.stats div:last-child{border:0}
+.stats b{display:block;font-size:20px;color:var(--cyan)}
+.stats span{font-size:12px;color:var(--mute)}
+.legend{display:flex;gap:16px;padding:8px 14px;font-size:12px;color:var(--mute);border-top:1px solid var(--line)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+
+/* viz */
+.tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.tabs button{background:var(--panel);border:1px solid var(--line);color:var(--mute);padding:7px 16px;border-radius:20px}
+.tabs button.on{background:var(--cyan);color:#022;border-color:var(--cyan)}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
+.chartbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.chartbox h4{font-size:15px;margin-bottom:10px}
+.chartbox canvas{max-height:300px}
+
+/* about + help */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:12px 0 22px}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.step i{font-style:normal;display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--cyan);color:#022;font-weight:700;margin-bottom:8px}
+.step h5{font-size:15px;margin-bottom:4px}.step p{font-size:13px;color:var(--mute)}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.info{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.info .ic{font-size:26px}.info h4{margin:6px 0}.info p,.info li{font-size:14px;color:var(--mute);line-height:1.5}
+.info ul{padding-left:18px}
+.note{margin-top:18px;padding:14px;border-left:4px solid var(--cyan);background:var(--panel);border-radius:6px;font-size:14px}
+.note a,.info a{color:var(--cyan)}
+
+@media(max-width:860px){.split{grid-template-columns:1fr}.charts{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+
+<!-- ========== AUTH ========== -->
+<section id="auth">
+  <div class="card" id="loginCard">
+    <div class="logo">🌊</div><h1>Aqua Deep</h1>
+    <p class="sub">Indian Ocean Float Monitoring System</p>
+    <label for="lEmail">Email Address</label><input type="email" id="lEmail">
+    <label for="lPass">Password</label><input type="password" id="lPass">
+    <div class="err" id="lErr"></div>
+    <button class="btn" onclick="login()">Sign In</button>
+    <div class="or">or continue with</div>
+    <div id="g1" style="display:flex;justify-content:center;margin-top:10px"></div><button class="btn alt gfb" onclick="googleDemo()">Continue with Google</button>
+    <div class="switch">Don't have an account? <a onclick="showAuth('signup')">Sign Up</a></div>
+  </div>
+  <div class="card hidden" id="signupCard">
+    <div class="logo">🌊</div><h1>Create Account</h1>
+    <p class="sub">Join the INCOIS Argo monitoring network</p>
+    <label for="sName">Username</label><input type="text" id="sName">
+    <label for="sEmail">Email Address</label><input type="email" id="sEmail">
+    <label for="sPass">Password</label><input type="password" id="sPass">
+    <div class="err" id="sErr"></div>
+    <button class="btn" onclick="signup()">Create Account</button>
+    <div class="or">or</div>
+    <div id="g2" style="display:flex;justify-content:center;margin-top:10px"></div><button class="btn alt gfb" onclick="googleDemo()">Sign up with Google</button>
+    <div class="switch">Already have an account? <a onclick="showAuth('login')">Sign In</a></div>
+  </div>
+</section>
+
+<!-- ========== APP ========== -->
+<div id="app" class="hidden">
+  <header>
+    <span class="brand">🌊 INCOIS Argo</span>
+    <nav id="nav">
+      <button data-p="map" class="on">🗺️ Map &amp; Chat</button>
+      <button data-p="viz">📊 Visualizations</button>
+      <button data-p="about">🔵 About Argo</button>
+      <button data-p="help">❓ Help</button>
+    </nav>
+    <div class="user"><span class="avatar" id="avatar">U</span><span id="uname">User</span><button onclick="logout()">⏻ Logout</button></div>
+  </header>
+
+  <main>
+    <!-- Map & Chat -->
+    <div class="page on" id="p-map">
+      <div class="split">
+        <div class="chat">
+          <div class="chat-head">
+            <span>🤖</span><h3>Argo Assistant</h3><span class="live">LIVE</span>
+            <select id="lang" aria-label="Language">
+              <option value="en-IN">English</option><option value="hi-IN">Hindi</option>
+              <option value="ta-IN">Tamil</option><option value="te-IN">Telugu</option>
+              <option value="kn-IN">Kannada</option><option value="ml-IN">Malayalam</option>
+              <option value="bn-IN">Bengali</option><option value="mr-IN">Marathi</option>
+            </select>
+          </div>
+          <div id="msgs"><div class="m bot">👋 Welcome to INCOIS Argo Float Monitor! I can help you understand ocean data, float positions, sea conditions, and fishing advisories. Ask me anything!</div></div>
+          <div class="chat-in">
+            <input id="q" placeholder="Ask about floats, SST, fishing zones…" onkeydown="if(event.key==='Enter')send()">
+            <button id="mic" title="Speak" onclick="listen()">🎤</button>
+            <button class="send" onclick="send()" title="Send">➤</button>
+          </div>
+          <div class="hint">Click 🎤 to speak in your language</div>
+        </div>
+        <div class="mapbox">
+          <h3>📍 Indian Ocean Argo Float Positions</h3>
+          <div id="map"></div>
+          <div class="stats">
+            <div><b id="sCount">—</b><span>Active Floats</span></div>
+            <div><b id="sTemp">—</b><span>Avg Temp (°C)</span></div>
+            <div><b id="sDepth">—</b><span>Avg Depth (m)</span></div>
+            <div><b id="sTime">—</b><span>Last Updated</span></div>
+          </div>
+          <div class="legend">
+            <span><i class="dot" style="background:var(--cyan)"></i>Active</span>
+            <span><i class="dot" style="background:var(--orange)"></i>Surfaced</span>
+            <span><i class="dot" style="background:var(--purple)"></i>Deep Profile</span>
+            <span style="margin-left:auto">Source: INCOIS / Argo India</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Visualizations -->
+    <div class="page" id="p-viz">
+      <h2>📊 Ocean Data Visualizations</h2>
+      <div class="tabs" id="vtabs">
+        <button data-v="all" class="on">All</button><button data-v="temp">Temperature</button>
+        <button data-v="depth">Depth</button><button data-v="fish">Fishing Advisory</button>
+      </div>
+      <div class="charts">
+        <div class="chartbox" data-g="temp"><h4>Temperature Depth Profile</h4><canvas id="c1"></canvas></div>
+        <div class="chartbox" data-g="temp"><h4>Monthly Sea Surface Temperature</h4><canvas id="c2"></canvas></div>
+        <div class="chartbox" data-g="depth"><h4>Float Data: Temperature vs Depth</h4><canvas id="c3"></canvas></div>
+        <div class="chartbox" data-g="depth"><h4>Salinity Distribution</h4><canvas id="c4"></canvas></div>
+        <div class="chartbox" data-g="fish"><h4>Potential Fishing Zone Index (SST &amp; Chlorophyll)</h4><canvas id="c5"></canvas></div>
+        <div class="chartbox" data-g="temp" style="grid-column:1/-1"><h4>Temperature Profile &amp; March–April Forecast</h4>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
+            <figure><img src="temp.png" alt="Temperature Profile" style="width:100%;border-radius:8px" onerror="this.parentNode.innerHTML='<p style=color:var(--mute);font-size:13px>Add temp.png to the static folder.</p>'"><figcaption style="font-size:13px;color:var(--mute);margin-top:6px">Temperature Profile</figcaption></figure>
+            <figure><img src="march-april.png" alt="March-April Forecast" style="width:100%;border-radius:8px" onerror="this.parentNode.innerHTML='<p style=color:var(--mute);font-size:13px>Add march-april.png to the static folder.</p>'"><figcaption style="font-size:13px;color:var(--mute);margin-top:6px">March–April Forecast</figcaption></figure>
+          </div></div>
+      </div>
+    </div>
+
+    <!-- About -->
+    <div class="page" id="p-about">
+      <h2>🔵 What is Argo?</h2>
+      <p style="color:var(--mute);max-width:760px;line-height:1.6">Argo is a global array of free-drifting profiling floats that measure temperature and salinity of the upper 2000 m of ocean. India's contribution is managed by <b style="color:var(--text)">INCOIS (Indian National Centre for Ocean Information Services)</b>, Hyderabad.</p>
+      <h3 style="margin-top:22px">How Argo Floats Work</h3>
+      <div class="steps">
+        <div class="step"><i>1</i><h5>Deployment</h5><p>Floats are deployed from research vessels or aircraft.</p></div>
+        <div class="step"><i>2</i><h5>Drift at 1000 m</h5><p>Drifts with ocean currents for about 10 days.</p></div>
+        <div class="step"><i>3</i><h5>Deep Profile</h5><p>Descends to 2000 m collecting temperature and salinity.</p></div>
+        <div class="step"><i>4</i><h5>Ascent</h5><p>Rises to the surface, sampling the full water column.</p></div>
+        <div class="step"><i>5</i><h5>Satellite Transmission</h5><p>Sends data via Argos/Iridium to INCOIS servers.</p></div>
+      </div>
+      <div class="grid3">
+        <div class="info"><div class="ic">🌊</div><h4>Float Structure</h4><p>About 1.5 m tall and 25 kg. Holds a pressure sensor, CTD instrument, battery pack, hydraulic system and satellite antenna.</p></div>
+        <div class="info"><div class="ic">🛰️</div><h4>Satellite Communication</h4><p>Data goes to the Argos system run by CLS France, then to INCOIS Hyderabad for quality control and global distribution via GTS.</p></div>
+        <div class="info"><div class="ic">🐟</div><h4>Value for Fishermen</h4><p>Argo data improves SST forecasts, Potential Fishing Zone identification, cyclone intensity prediction and monsoon forecasting.</p></div>
+        <div class="info"><div class="ic">📡</div><h4>India's Argo Program</h4><p>India operates 70+ floats in the Indian Ocean under the Ministry of Earth Sciences.</p></div>
+        <div class="info"><div class="ic">🌡️</div><h4>Temperature Profiles</h4><p>Each float gives a vertical profile from the surface to 2000 m, revealing the thermocline, mixed layer depth and ocean heat content.</p></div>
+        <div class="info"><div class="ic">🗺️</div><h4>Indian Ocean Coverage</h4><p>Floats cover the Bay of Bengal, Arabian Sea and southern Indian Ocean, supporting PFZ advisories.</p></div>
+      </div>
+      <div class="note"><b>Data Source: INCOIS.</b> Official portal: <a href="https://www.incois.gov.in" target="_blank" rel="noopener">www.incois.gov.in</a> · Argo India: <a href="https://argo.incois.gov.in" target="_blank" rel="noopener">argo.incois.gov.in</a></div>
+    </div>
+
+    <!-- Help -->
+    <div class="page" id="p-help">
+      <h2>❓ Help &amp; User Guide</h2>
+      <p style="color:var(--mute);margin-bottom:16px">How to use the dashboard, for researchers, fishermen and ocean enthusiasts.</p>
+      <div class="grid3">
+        <div class="info"><div class="ic">🗺️</div><h4>Interactive Argo Float Map</h4><ul><li>Click a marker for WMO ID, position, temperature, salinity, depth.</li><li>Cyan = Active, Orange = Surfaced, Purple = Deep drift.</li><li>Zoom with the scroll wheel or map controls.</li></ul></div>
+        <div class="info"><div class="ic">🤖</div><h4>AI Ocean Assistant</h4><ul><li>Type a question and press Enter.</li><li>Click 🎤 to speak.</li><li>Change language from the dropdown.</li></ul></div>
+        <div class="info"><div class="ic">📊</div><h4>Data Visualizations</h4><ul><li>Temperature depth profile</li><li>Monthly SST bar chart</li><li>Temperature vs depth scatter</li><li>Salinity pie chart</li><li>Potential Fishing Zone chart</li></ul></div>
+        <div class="info"><div class="ic">🐟</div><h4>For Fishermen (மீனவர்களுக்கு)</h4><ul><li>Open the "Fishing Advisory" tab.</li><li>Ask: "Where are the best fishing zones today?"</li><li>PFZ data is updated twice daily by INCOIS.</li></ul></div>
+        <div class="info"><div class="ic">🌐</div><h4>Official Resources</h4><ul><li><a href="https://www.incois.gov.in" target="_blank" rel="noopener">INCOIS</a></li><li><a href="https://argo.incois.gov.in" target="_blank" rel="noopener">Argo India</a></li><li><a href="https://argo.ucsd.edu" target="_blank" rel="noopener">Global Argo</a></li></ul></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ---------- AUTH (demo only: stored in browser. Replace with a real backend.) ---------- */
+const $=id=>document.getElementById(id);
+const users=()=>JSON.parse(localStorage.getItem('aq_users')||'[]');
+function showAuth(w){$('loginCard').classList.toggle('hidden',w!=='login');$('signupCard').classList.toggle('hidden',w!=='signup')}
+async function post(url,body){
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({error:'Server error'}));
+  if(!r.ok)throw new Error(j.error||'Request failed');
+  return j;
+}
+async function signup(){
+  try{
+    const j=await post('/api/signup',{name:$('sName').value,email:$('sEmail').value,password:$('sPass').value});
+    sessionStorage.setItem('aq_token',j.token);enter(j.name);
+  }catch(e){$('sErr').textContent=e.message}
+}
+async function login(){
+  try{
+    const j=await post('/api/login',{email:$('lEmail').value,password:$('lPass').value});
+    sessionStorage.setItem('aq_token',j.token);enter(j.name);
+  }catch(e){$('lErr').textContent=e.message}
+}
+// Google: add <script src="https://accounts.google.com/gsi/client"> and call this with the credential
+async function googleLogin(credential){
+  try{const j=await post('/api/google',{credential});sessionStorage.setItem('aq_token',j.token);enter(j.name)}
+  catch(e){alert(e.message)}
+}
+function googleDemo(){alert('Google sign-in needs GOOGLE_CLIENT_ID. See README, then wire googleLogin(credential).')}
+function enter(name){
+  sessionStorage.setItem('aq_user',name);
+  $('auth').classList.add('hidden');$('app').classList.remove('hidden');
+  $('uname').textContent=name;$('avatar').textContent=name[0].toUpperCase();
+  setTimeout(()=>{initMap();map.invalidateSize()},50);
+}
+function logout(){sessionStorage.clear();location.reload()}
+if(sessionStorage.getItem('aq_user'))enter(sessionStorage.getItem('aq_user'));
+
+
+// ---- Google Identity Services: loads only when the server has GOOGLE_CLIENT_ID ----
+(async function(){
+  try{
+    const cfg=await (await fetch('/api/config')).json();
+    if(!cfg.google_client_id)return;
+    const sc=document.createElement('script');
+    sc.src='https://accounts.google.com/gsi/client';sc.async=true;
+    sc.onload=()=>{
+      google.accounts.id.initialize({client_id:cfg.google_client_id,callback:r=>googleLogin(r.credential)});
+      ['g1','g2'].forEach(id=>google.accounts.id.renderButton($(id),{theme:'filled_blue',size:'large',width:300}));
+      document.querySelectorAll('.gfb').forEach(b=>b.classList.add('hidden'));
+    };
+    document.head.append(sc);
+  }catch(e){}
+})();
+
+/* ---------- NAV ---------- */
+$('nav').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id==='p-'+b.dataset.p));
+  if(b.dataset.p==='map')map.invalidateSize();
+  if(b.dataset.p==='viz')initCharts();
+};
+
+/* ---------- FLOAT DATA (sample: replace with a fetch() to your INCOIS data API) ---------- */
+let floats=[
+ {id:'2902114',lat:15.2,lon:68.5,t:27.8,s:36.1,d:1000,st:'active'},
+ {id:'2902118',lat:10.4,lon:72.9,t:28.4,s:35.6,d:2000,st:'deep'},
+ {id:'2902125',lat:5.1,lon:80.2,t:28.9,s:34.9,d:1500,st:'active'},
+ {id:'2902131',lat:-3.5,lon:75.0,t:27.9,s:35.2,d:1000,st:'surfaced'},
+ {id:'2902140',lat:14.8,lon:87.6,t:28.2,s:33.4,d:1800,st:'active'},
+ {id:'2902146',lat:8.7,lon:90.3,t:29.1,s:32.9,d:2000,st:'deep'},
+ {id:'2902152',lat:-12.0,lon:65.4,t:26.5,s:35.5,d:1000,st:'surfaced'},
+ {id:'2902159',lat:18.9,lon:62.0,t:26.9,s:36.4,d:1500,st:'active'},
+ {id:'2902163',lat:-8.4,lon:85.7,t:27.3,s:34.8,d:1900,st:'deep'},
+ {id:'2902170',lat:12.1,lon:81.9,t:28.7,s:33.9,d:1200,st:'active'}
+];
+const col={active:'#27d3e6',surfaced:'#ff9d3c',deep:'#a58bff'};
+let map,mapReady=false;
+async function initMap(){
+  if(mapReady)return;mapReady=true;
+  map=L.map('map').setView([8,76],4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+  try{const r=await fetch('/api/floats');const j=await r.json();floats=j.floats}catch(e){}
+  floats.forEach(f=>L.circleMarker([f.lat,f.lon],{radius:8,color:col[f.st],fillColor:col[f.st],fillOpacity:.8})
+    .addTo(map).bindPopup(`<b>WMO ${f.id}</b><br>Lat/Lon: ${f.lat}, ${f.lon}<br>Temp: ${f.t??'n/a'} °C<br>Salinity: ${f.s??'n/a'} PSU<br>Depth: ${f.d} m<br>Status: ${f.st}`));
+  const avg=k=>{const v=floats.map(f=>f[k]).filter(x=>x!=null);return v.reduce((a,b)=>a+b,0)/(v.length||1)};
+  $('sCount').textContent=floats.length;$('sTemp').textContent=avg('t').toFixed(1);
+  $('sDepth').textContent=Math.round(avg('d'));$('sTime').textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+}
+
+/* ---------- CHARTS ---------- */
+let chartsReady=false;
+function initCharts(){
+  if(chartsReady)return;chartsReady=true;
+  Chart.defaults.color='#8fb0c0';Chart.defaults.borderColor='#16405a';
+  const depths=[0,50,100,200,500,1000,1500,2000];
+  new Chart($('c1'),{type:'line',data:{labels:depths.map(d=>d+' m'),datasets:[{label:'Temp °C',data:[29,28.6,25,18,11,5.5,3.2,2.1],borderColor:'#27d3e6',tension:.35,fill:false}]}});
+  new Chart($('c2'),{type:'bar',data:{labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],datasets:[{label:'SST °C',data:[26.8,27.4,28.6,29.3,29.5,28.4,27.9,27.8,27.9,28.2,28.0,27.2],backgroundColor:'#27d3e6'}]}});
+  new Chart($('c3'),{type:'scatter',data:{datasets:[{label:'Floats',data:floats.map(f=>({x:f.t,y:f.d})),backgroundColor:'#a58bff'}]},options:{scales:{x:{title:{display:true,text:'Temperature °C'}},y:{reverse:true,title:{display:true,text:'Depth m'}}}}});
+  new Chart($('c4'),{type:'pie',data:{labels:['< 34 PSU','34–35','35–36','> 36'],datasets:[{data:[18,27,38,17],backgroundColor:['#27d3e6','#4f8cff','#a58bff','#ff9d3c']}]}});
+  new Chart($('c5'),{type:'bar',data:{labels:['Arabian Sea N','Arabian Sea S','Bay of Bengal N','Bay of Bengal S','Lakshadweep','Andaman'],datasets:[{label:'PFZ index',data:[78,64,82,70,55,66],backgroundColor:'#6dffb0'}]},options:{scales:{y:{max:100}}}});
+}
+$('vtabs').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#vtabs button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('.chartbox').forEach(c=>c.classList.toggle('hidden',b.dataset.v!=='all'&&c.dataset.g!==b.dataset.v));
+};
+
+/* ---------- CHATBOT ---------- */
+function add(text,who){const d=document.createElement('div');d.className='m '+who;d.textContent=text;$('msgs').append(d);$('msgs').scrollTop=1e9}
+async function reply(q){
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q,lang:$('lang').value})});
+    return (await r.json()).answer;
+  }catch(e){return 'Server not reachable. Please try again.'}
+}
+async function send(){
+  const q=$('q').value.trim();if(!q)return;
+  add(q,'me');$('q').value='';
+  const a=await reply(q);add(a,'bot');speak(a);
+}
+function speak(t){if(!('speechSynthesis' in window))return;const u=new SpeechSynthesisUtterance(t);u.lang=$('lang').value;speechSynthesis.cancel();speechSynthesis.speak(u)}
+function listen(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){add('Voice input is not supported in this browser. Try Chrome.','bot');return}
+  const r=new SR();r.lang=$('lang').value;
+  r.onstart=()=>$('mic').textContent='🔴';
+  r.onend=()=>$('mic').textContent='🎤';
+  r.onresult=e=>{$('q').value=e.results[0][0].transcript;send()};
+  r.start();
+}
+</script>
+</body>
+</html>
