@@ -44,7 +44,7 @@ if URL:
             with engine.begin() as c:
                 return c.execute(text("INSERT INTO users(name,email,pw) VALUES(:n,:e,:p) RETURNING id"),
                                  {"n": name, "e": email, "p": pw}).scalar()
-        except DupEmail:
+        except IntegrityError:
             raise DupEmail()
 else:
     with sqlite3.connect(DB_PATH) as c:
@@ -110,7 +110,8 @@ def google_login():
     cred = (request.get_json(force=True).get("credential") or "")
     r = requests.get("https://oauth2.googleapis.com/tokeninfo", params={"id_token": cred}, timeout=10)
     info = r.json()
-    if r.status_code != 200 or info.get("aud") != GOOGLE_CLIENT_ID:
+    if (r.status_code != 200 or info.get("aud") != GOOGLE_CLIENT_ID
+            or str(info.get("email_verified")).lower() != "true"):
         return jsonify(error="Google sign-in failed."), 401
     email, name = info["email"].lower(), info.get("name") or info["email"].split("@")[0]
     u = get_user(email)
@@ -325,7 +326,18 @@ def fallback_answer(q):
         return "Potential Fishing Zones are strongest where SST is 27-29 °C with high chlorophyll. Check the latest INCOIS PFZ advisory before going to sea."
     if any(k in s for k in ("argo", "float")):
         return "Argo floats drift at ~1000 m, dive to 2000 m, then rise every ~10 days and send temperature and salinity data by satellite."
-    return "I can help with Argo floats, sea temperature, depth and fishing zones."
+    if any(k in s for k in ("temp", "sst", "warm", "cold", "hot", "ocean", "sea", "water", "तापमान", "வெப்ப")):
+        return ("Indian Ocean surface water is usually 27-29 °C and gets colder with depth. "
+                "The temperature drops fastest in the thermocline, roughly 50-150 m down. "
+                "Open the float map to see the latest temperature at each Argo float.")
+    if any(k in s for k in ("salin", "salt", "psal")):
+        return ("Salinity is about 34-36 PSU in most of the Indian Ocean. The Bay of Bengal is fresher "
+                "because of river water and monsoon rain, and the Arabian Sea is saltier.")
+    if any(k in s for k in ("depth", "deep", "pressure", "dbar")):
+        return "Argo floats usually park at about 1000 m and dive to 2000 m before rising to the surface to send data."
+    if any(k in s for k in ("monsoon", "cyclone", "storm", "weather", "wave", "wind")):
+        return "For storms, waves and wind, always follow the official INCOIS and IMD warnings before going to sea."
+    return "I can help with Argo floats, sea temperature, salinity, depth and fishing zones."
 
 @app.post("/api/chat")
 def chat():
@@ -343,7 +355,7 @@ def chat():
     try:
         r = requests.post("https://api.anthropic.com/v1/messages", timeout=30,
             headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-            json={"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"), "max_tokens": 400,
+            json={"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5"), "max_tokens": 400,
                   "system": system, "messages": [{"role": "user", "content": q}]})
         r.raise_for_status()
         return jsonify(answer=r.json()["content"][0]["text"])
