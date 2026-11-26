@@ -6,29 +6,38 @@ app_port: 7860
 # AQUA DEEP Float Dashboard
 
 ## Run locally
-    pip install -r requirements.txt
-    python app.py          # http://localhost:7860
+```bash
+pip install -r requirements.txt
+python app.py
+```
+Open `http://localhost:7860`.
 
-## Files
-- app.py, requirements.txt, Dockerfile, README.md
-- static/index.html (dashboard)
-- static/temp.png and static/march-april.png (copy your two images here)
+## Data integration
+- `GET /api/floats` retrieves recent Argo observations from Ifremer ERDDAP, filtered to the project's Indian Ocean bounding box (latitude -40 to 25, longitude 40 to 100).
+- `GET /api/profile/<WMO_ID>` returns the latest available measured pressure, temperature and salinity profile for that float (within the previous 180 days).
+- `GET /api/trajectory/<WMO_ID>` returns recorded positions when available.
+- Float-list responses are cached for 15 minutes. The browser retries the list every 15 minutes. Argo data delivery itself is not guaranteed to be real-time.
+- If the Argo source is unavailable, the map shows an unavailable message instead of substituting fabricated sample floats.
+- The monthly SST and official Potential Fishing Zone (PFZ) feeds are not connected in this version; those charts are intentionally left without invented values. The PFZ map layer, alerts, and some sea-condition fallback values remain clearly identified as sample/demo content.
 
-## Hugging Face Space (SDK: Docker)
-Upload everything. Settings -> Variables and secrets:
+## Project files
+- `app.py` — Flask backend and API routes
+- `static/index.html` — dashboard UI
+- `requirements.txt` — Python dependencies
+- `Dockerfile` — deployment configuration
+
+## Hugging Face Space (Docker)
+Upload the project files. Configure these variables/secrets in Space settings:
 | Name | Purpose |
 |---|---|
-| SECRET_KEY | any long random string (required) |
-| ANTHROPIC_API_KEY | AI chatbot (optional) |
-| GOOGLE_CLIENT_ID | Google sign-in button (optional) |
-| DATABASE_URL | Postgres URL (Neon/Supabase) so users, alerts and favourites are permanent |
-| ADMIN_EMAILS | comma-separated emails that get the Admin tab (post alerts, see users) |
+| `SECRET_KEY` | Long random signing key |
+| `ANTHROPIC_API_KEY` | Optional AI chatbot |
+| `GOOGLE_CLIENT_ID` | Optional Google sign-in |
+| `DATABASE_URL` | Optional Postgres URL (Neon/Supabase) for persistent users, alerts and favourites |
+| `ADMIN_EMAILS` | Comma-separated admin email addresses |
 
-## Google sign-in setup
-Google Cloud Console -> APIs & Services -> Credentials -> OAuth client ID (Web).
-Add your Space URL (https://<user>-<space>.hf.space) under Authorized JavaScript origins.
-Copy the Client ID into GOOGLE_CLIENT_ID.
+## Google sign-in
+Create a Web OAuth client in Google Cloud Console. Add your deployed Space URL under Authorized JavaScript origins, then set `GOOGLE_CLIENT_ID`.
 
-## Permanent database (free)
-Create a project at neon.tech, copy the connection string, set it as DATABASE_URL.
-Tables are created automatically.
+## Notes
+The Argo API may have upstream delays or temporary outages. For operational marine decisions, use current official INCOIS advisories; this dashboard is an educational data viewer.

@@ -4,6 +4,7 @@ Serves the dashboard and these APIs:
   GET  /api/floats   POST /api/chat
 """
 import os, time, sqlite3
+from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 import requests
 from flask import Flask, request, jsonify, send_from_directory
@@ -280,7 +281,7 @@ def fetch_argo():
 
 @app.get("/api/floats")
 def floats():
-    if _cache["data"] and time.time() - _cache["t"] < 3600:
+    if _cache["data"] and time.time() - _cache["t"] < 900:
         return jsonify(floats=_cache["data"], source="argo-erddap", updated=_cache.get("updated"))
     try:
         data = fetch_argo()
@@ -291,7 +292,40 @@ def floats():
         return jsonify(floats=data, source="argo-erddap", updated=updated)
     except Exception as e:
         app.logger.warning("Argo fetch failed: %s", e)
-        return jsonify(floats=SAMPLE, source="sample", updated=None)
+        # Never present demo coordinates as live observations.
+        return jsonify(floats=[], source="unavailable", updated=None,
+                       error="Argo data source is temporarily unavailable."), 503
+
+@app.get("/api/profile/<fid>")
+def float_profile(fid):
+    """Return the latest available measured pressure/temperature/salinity profile."""
+    if not fid.isdigit():
+        return jsonify(points=[], source="invalid"), 400
+    try:
+        query = (f'platform_number,time,pres,temp,psal&platform_number="{fid}"'
+                 '&time>=now-180days&orderBy("time,pres")')
+        url = ERDDAP + "?" + quote(query, safe=',&><=:\"')
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        table = response.json()["table"]
+        names = table["columnNames"]
+        rows = [dict(zip(names, row)) for row in table["rows"]]
+        rows = [x for x in rows if x.get("pres") is not None and
+                (x.get("temp") is not None or x.get("psal") is not None)]
+        if not rows:
+            return jsonify(points=[], source="argo-erddap", message="No measured profile is available for this float in the selected period.")
+        latest = max(str(x.get("time") or "") for x in rows)
+        profile = [x for x in rows if str(x.get("time") or "") == latest]
+        profile.sort(key=lambda x: float(x["pres"]))
+        points = [{"pressure": float(x["pres"]),
+                   "temperature": float(x["temp"]) if x.get("temp") is not None else None,
+                   "salinity": float(x["psal"]) if x.get("psal") is not None else None}
+                  for x in profile]
+        return jsonify(points=points, source="argo-erddap", profile_time=latest,
+                       count=len(points), units={"pressure":"dbar","temperature":"°C","salinity":"PSU"})
+    except Exception as e:
+        app.logger.warning("Argo profile fetch failed for %s: %s", fid, e)
+        return jsonify(points=[], source="unavailable", message="Could not retrieve the measured profile right now."), 502
 
 @app.get("/api/trajectory/<fid>")
 def trajectory(fid):
