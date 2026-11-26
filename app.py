@@ -4,6 +4,7 @@ Serves the dashboard and these APIs:
   GET  /api/floats   POST /api/chat
 """
 import os, time, sqlite3
+from datetime import datetime, timedelta, timezone
 import requests
 from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -224,41 +225,73 @@ SAMPLE = [
     {"id": "2902140", "lat": 14.8, "lon": 87.6, "t": 28.2, "s": 33.4, "d": 1800, "st": "active"},
 ]
 
+def _parse_time(t):
+    try:
+        return datetime.fromisoformat(str(t).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
 def fetch_argo():
-    # last 10 days, Indian Ocean box, surface-most reading per float
-    q = ('?platform_number,time,latitude,longitude,pres,temp,psal'
-         '&time>=now-10days&latitude>=-40&latitude<=25&longitude>=40&longitude<=100'
-         '&pres<=10&orderByMax("platform_number,time")')
-    r = requests.get(ERDDAP + q, timeout=25)
+    """Recent Argo floats (last 10 days, Indian Ocean box) from Ifremer ERDDAP.
+    depth = deepest pressure (dbar ~ metres) reached in the window.
+    status: surfaced = reported within 24 h, deep = reached >= 1500, else active."""
+    base = ('&time>=now-10days&latitude>=-40&latitude<=25&longitude>=40&longitude<=100')
+    q1 = ('?platform_number,time,latitude,longitude,pres,temp,psal' + base +
+          '&pres<=10&orderByMax("platform_number,time")')
+    r = requests.get(ERDDAP + q1, timeout=25)
     r.raise_for_status()
     t = r.json()["table"]
     cols = t["columnNames"]
+    depth = {}
+    try:
+        q2 = '?platform_number,pres' + base + '&orderByMax("platform_number,pres")'
+        r2 = requests.get(ERDDAP + q2, timeout=25)
+        r2.raise_for_status()
+        t2 = r2.json()["table"]
+        c2 = t2["columnNames"]
+        for row in t2["rows"]:
+            x = dict(zip(c2, row))
+            if x.get("pres") is not None:
+                depth[str(x["platform_number"])] = round(x["pres"])
+    except Exception as e:
+        app.logger.warning("Argo depth query failed: %s", e)
+    now = datetime.now(timezone.utc)
     out = []
     for row in t["rows"]:
         x = dict(zip(cols, row))
         if x["latitude"] is None or x["longitude"] is None:
             continue
+        fid = str(x["platform_number"])
+        d = depth.get(fid)
+        tm = _parse_time(x["time"])
+        if tm and tm.tzinfo and (now - tm) <= timedelta(hours=24):
+            st = "surfaced"
+        elif d and d >= 1500:
+            st = "deep"
+        else:
+            st = "active"
         out.append({
-            "id": str(x["platform_number"]), "lat": round(x["latitude"], 2), "lon": round(x["longitude"], 2),
+            "id": fid, "lat": round(x["latitude"], 2), "lon": round(x["longitude"], 2),
             "t": round(x["temp"], 1) if x["temp"] is not None else None,
             "s": round(x["psal"], 1) if x["psal"] is not None else None,
-            "d": 2000, "st": "active", "time": x["time"],
+            "d": d, "st": st, "time": x["time"],
         })
     return out[:150]
 
 @app.get("/api/floats")
 def floats():
     if _cache["data"] and time.time() - _cache["t"] < 3600:
-        return jsonify(floats=_cache["data"], source="argo-erddap (cached)")
+        return jsonify(floats=_cache["data"], source="argo-erddap", updated=_cache.get("updated"))
     try:
         data = fetch_argo()
         if not data:
             raise ValueError("empty")
-        _cache.update(t=time.time(), data=data)
-        return jsonify(floats=data, source="argo-erddap")
+        updated = max((x.get("time") or "") for x in data) or None
+        _cache.update(t=time.time(), data=data, updated=updated)
+        return jsonify(floats=data, source="argo-erddap", updated=updated)
     except Exception as e:
         app.logger.warning("Argo fetch failed: %s", e)
-        return jsonify(floats=SAMPLE, source="sample")
+        return jsonify(floats=SAMPLE, source="sample", updated=None)
 
 @app.get("/api/trajectory/<fid>")
 def trajectory(fid):
