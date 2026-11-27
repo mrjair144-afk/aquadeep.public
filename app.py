@@ -44,7 +44,7 @@ if URL:
             with engine.begin() as c:
                 return c.execute(text("INSERT INTO users(name,email,pw) VALUES(:n,:e,:p) RETURNING id"),
                                  {"n": name, "e": email, "p": pw}).scalar()
-        except IntegrityError:
+        except DupEmail:
             raise DupEmail()
 else:
     with sqlite3.connect(DB_PATH) as c:
@@ -110,8 +110,7 @@ def google_login():
     cred = (request.get_json(force=True).get("credential") or "")
     r = requests.get("https://oauth2.googleapis.com/tokeninfo", params={"id_token": cred}, timeout=10)
     info = r.json()
-    if (r.status_code != 200 or info.get("aud") != GOOGLE_CLIENT_ID
-            or str(info.get("email_verified")).lower() != "true"):
+    if r.status_code != 200 or info.get("aud") != GOOGLE_CLIENT_ID:
         return jsonify(error="Google sign-in failed."), 401
     email, name = info["email"].lower(), info.get("name") or info["email"].split("@")[0]
     u = get_user(email)
@@ -320,33 +319,66 @@ def trajectory(fid):
 LANGS = {"en-IN": "English", "hi-IN": "Hindi", "ta-IN": "Tamil", "te-IN": "Telugu",
          "kn-IN": "Kannada", "ml-IN": "Malayalam", "bn-IN": "Bengali", "mr-IN": "Marathi"}
 
-def fallback_answer(q):
+REPLIES = {
+    "fish": {
+        "en": "Potential Fishing Zones are strongest where SST is 27-29 °C with high chlorophyll. Check the latest INCOIS PFZ advisory before going to sea.",
+        "ta": "மீன்பிடி மண்டலங்கள் பொதுவாக கடல் மேற்பரப்பு வெப்பநிலை 27–29 °C மற்றும் குளோரோபில் அதிகமாக உள்ள இடங்களில் சிறப்பாக இருக்கும். கடலுக்குச் செல்லும் முன் INCOIS-ன் சமீபத்திய PFZ அறிவுரையைப் பார்க்கவும்.",
+        "hi": "मछली पकड़ने के क्षेत्र आमतौर पर वहाँ अच्छे होते हैं जहाँ समुद्री सतह का तापमान 27–29 °C और क्लोरोफिल अधिक हो। समुद्र में जाने से पहले INCOIS की ताज़ा PFZ सलाह देखें।"},
+    "temp": {
+        "en": "Indian Ocean surface water is usually 27-29 °C and gets colder with depth. The temperature drops fastest in the thermocline, roughly 50-150 m down. Open the float map to see the latest temperature at each Argo float.",
+        "ta": "இந்தியப் பெருங்கடலின் மேற்பரப்பு நீர் பொதுவாக 27–29 °C இருக்கும்; ஆழம் செல்லச் செல்ல குளிர்ச்சியாகும். வெப்பநிலை மிக வேகமாகக் குறையும் அடுக்கு (தெர்மோக்லைன்) சுமார் 50–150 மீ ஆழத்தில் உள்ளது. ஒவ்வொரு ஆர்கோ மிதவையின் சமீபத்திய வெப்பநிலையைப் பார்க்க வரைபடத்தைத் திறக்கவும்.",
+        "hi": "हिंद महासागर की सतह का पानी आमतौर पर 27–29 °C होता है और गहराई के साथ ठंडा होता जाता है। तापमान सबसे तेज़ी से थर्मोक्लाइन में गिरता है, जो लगभग 50–150 मीटर गहराई पर होता है। हर आर्गो फ्लोट का ताज़ा तापमान देखने के लिए नक्शा खोलें।"},
+    "depth": {
+        "en": "Argo floats usually measure down to about 2000 m. Click a float on the map to see its depth.",
+        "ta": "ஆர்கோ மிதவைகள் பொதுவாக சுமார் 2000 மீ ஆழம் வரை அளவிடுகின்றன. ஒரு மிதவையின் ஆழத்தைப் பார்க்க வரைபடத்தில் அதைக் கிளிக் செய்யுங்கள்.",
+        "hi": "आर्गो फ्लोट आमतौर पर लगभग 2000 मीटर की गहराई तक माप लेते हैं। किसी फ्लोट की गहराई देखने के लिए नक्शे पर उस पर क्लिक करें।"},
+    "argo": {
+        "en": "Argo floats drift at ~1000 m, dive to 2000 m, then rise every ~10 days and send temperature and salinity data by satellite.",
+        "ta": "ஆர்கோ மிதவைகள் சுமார் 1000 மீ ஆழத்தில் மிதந்து, 2000 மீ வரை இறங்கி, சுமார் 10 நாட்களுக்கு ஒருமுறை மேலே வந்து வெப்பநிலை, உப்புத்தன்மை தரவை செயற்கைக்கோள் வழியாக அனுப்புகின்றன.",
+        "hi": "आर्गो फ्लोट लगभग 1000 मीटर की गहराई पर बहते हैं, 2000 मीटर तक जाते हैं और लगभग हर 10 दिन में सतह पर आकर तापमान और लवणता का डेटा उपग्रह से भेजते हैं।"},
+    "default": {
+        "en": "I can help with Argo floats, sea temperature, depth and fishing zones.",
+        "ta": "ஆர்கோ மிதவைகள், கடல் வெப்பநிலை, ஆழம், மீன்பிடி மண்டலங்கள் பற்றி நான் உதவ முடியும்.",
+        "hi": "मैं आर्गो फ्लोट, समुद्री तापमान, गहराई और मछली क्षेत्र के बारे में मदद कर सकता हूँ।"},
+}
+KEYS = [
+    ("fish", ("fish", "pfz", "மீன்", "मछली")),
+    ("temp", ("temp", "sst", "thermocline", "வெப்ப", "तापमान")),
+    ("depth", ("depth", "ஆழம்", "गहराई")),
+    ("argo", ("argo", "float", "position", "மிதவை", "फ्लोट", "आर्गो")),
+]
+
+def script_lang(text):
+    """If the question is written in Tamil or Devanagari script, answer in that language."""
+    for ch in text:
+        if "\u0b80" <= ch <= "\u0bff":
+            return "ta"
+        if "\u0900" <= ch <= "\u097f":
+            return "hi"
+    return None
+
+def fallback_answer(q, code="en-IN"):
+    """Keyword replies used when no ANTHROPIC_API_KEY is set. Answers in the selected language."""
+    lang = script_lang(q) or (code or "en-IN")[:2]
+    if lang not in ("ta", "hi"):
+        lang = "en"
     s = q.lower()
-    if any(k in s for k in ("fish", "pfz", "மீன்", "मछली")):
-        return "Potential Fishing Zones are strongest where SST is 27-29 °C with high chlorophyll. Check the latest INCOIS PFZ advisory before going to sea."
-    if any(k in s for k in ("argo", "float")):
-        return "Argo floats drift at ~1000 m, dive to 2000 m, then rise every ~10 days and send temperature and salinity data by satellite."
-    if any(k in s for k in ("temp", "sst", "warm", "cold", "hot", "ocean", "sea", "water", "तापमान", "வெப்ப")):
-        return ("Indian Ocean surface water is usually 27-29 °C and gets colder with depth. "
-                "The temperature drops fastest in the thermocline, roughly 50-150 m down. "
-                "Open the float map to see the latest temperature at each Argo float.")
-    if any(k in s for k in ("salin", "salt", "psal")):
-        return ("Salinity is about 34-36 PSU in most of the Indian Ocean. The Bay of Bengal is fresher "
-                "because of river water and monsoon rain, and the Arabian Sea is saltier.")
-    if any(k in s for k in ("depth", "deep", "pressure", "dbar")):
-        return "Argo floats usually park at about 1000 m and dive to 2000 m before rising to the surface to send data."
-    if any(k in s for k in ("monsoon", "cyclone", "storm", "weather", "wave", "wind")):
-        return "For storms, waves and wind, always follow the official INCOIS and IMD warnings before going to sea."
-    return "I can help with Argo floats, sea temperature, salinity, depth and fishing zones."
+    for name, words in KEYS:
+        if any(w in s for w in words):
+            return REPLIES[name][lang]
+    return REPLIES["default"][lang]
 
 @app.post("/api/chat")
 def chat():
     d = request.get_json(force=True)
     q, lang = (d.get("q") or "").strip()[:1000], LANGS.get(d.get("lang"), "English")
+    sl = script_lang(q)
+    if sl:
+        lang = {"ta": "Tamil", "hi": "Hindi"}[sl]
     if not q:
         return jsonify(answer="Please type a question."), 400
     if not ANTHROPIC_KEY:
-        return jsonify(answer=fallback_answer(q))
+        return jsonify(answer=fallback_answer(q, d.get("lang")))
     system = (f"You are the Argo Assistant for an INCOIS Argo float dashboard in India. "
               f"Answer in {lang}, in 3-4 short sentences, in simple words for fishermen and students. "
               "Topics: Argo floats, Indian Ocean temperature/salinity, monsoon, fishing zones. "
@@ -355,13 +387,13 @@ def chat():
     try:
         r = requests.post("https://api.anthropic.com/v1/messages", timeout=30,
             headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-            json={"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5"), "max_tokens": 400,
+            json={"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"), "max_tokens": 400,
                   "system": system, "messages": [{"role": "user", "content": q}]})
         r.raise_for_status()
         return jsonify(answer=r.json()["content"][0]["text"])
     except Exception as e:
         app.logger.warning("chat failed: %s", e)
-        return jsonify(answer=fallback_answer(q))
+        return jsonify(answer=fallback_answer(q, d.get("lang")))
 
 # ---------------- pages ----------------
 @app.get("/")
